@@ -119,7 +119,7 @@ namespace ACE.Server.Physics.Common
             foreach (var visibleCellID in VisibleCellIDs)
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
-                if (VisibleCells.ContainsKey(blockCellID)) continue;
+                if (VisibleCells.ContainsKey(visibleCellID)) continue;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID);
                 VisibleCells.Add(visibleCellID, cell);
             }
