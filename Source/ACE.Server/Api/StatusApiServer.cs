@@ -45,6 +45,7 @@ namespace ACE.Server.Api
         private static DateTime _lastCleanup = DateTime.UtcNow;
 
         private static FileSystemWatcher? _watcher;
+        private static Timer? _cleanupTimer;
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static void Start()
@@ -64,6 +65,9 @@ namespace ACE.Server.Api
 
 
             _app = builder.Build();
+
+            _cleanupTimer = new Timer(_ => CleanupLimiters(), null,
+                                       TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
 
             if (ConfigManager.Config.Server.Api.RequireApiKey && !string.IsNullOrEmpty(ConfigManager.ConfigPath))
             {
@@ -107,12 +111,10 @@ namespace ACE.Server.Api
                     {
                         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                         await context.Response.WriteAsync("Too Many Requests");
-                        CleanupLimiters();
                         return;
                     }
 
                     entry.Limiter.RegisterEvent();
-                    CleanupLimiters();
                 }
 
                 await next();
@@ -200,6 +202,8 @@ namespace ACE.Server.Api
                 await _app.StopAsync();
                 _watcher?.Dispose();
                 _watcher = null;
+                _cleanupTimer?.Dispose();
+                _cleanupTimer = null;
             }
         }
 
