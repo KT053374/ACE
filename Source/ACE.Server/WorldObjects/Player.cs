@@ -126,6 +126,13 @@ namespace ACE.Server.WorldObjects
             UpdateCoinValue(false);
         }
 
+        public void LoadPossessions(ACE.Database.Entity.PossessedBiotas possessedBiotas)
+        {
+            SortBiotasIntoInventory(possessedBiotas.Inventory);
+            AddBiotasToEquippedObjects(possessedBiotas.WieldedItems);
+            UpdateCoinValue(false);
+        }
+
         public override void InitPhysicsObj()
         {
             base.InitPhysicsObj();

@@ -100,20 +100,31 @@ namespace ACE.Server.Managers
                 return;
             }
 
+            var playerBiota = offlinePlayer.Biota;
+            bool playerLoggedInOnNoLogLandblock = false;
+
+            ActionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            {
+                if (session.State == SessionState.TerminationStarted)
+                    return;
+
+                InitializePlayerShell(session, character, playerBiota, ref playerLoggedInOnNoLogLandblock);
+            }));
+
             var start = DateTime.UtcNow;
             DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
             {
                 log.DebugFormat("GetPossessedBiotasInParallel for {0} took {1:N0} ms", character.Name, (DateTime.UtcNow - start).TotalMilliseconds);
 
-                ActionQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, character, offlinePlayer.Biota, biotas)));
+                ActionQueue.EnqueueAction(new ActionEventDelegate(() => FinishPlayerEnterWorld(session, character, biotas, playerLoggedInOnNoLogLandblock)));
             });
         }
 
-        private static void DoPlayerEnterWorld(Session session, Character character, Biota playerBiota, PossessedBiotas possessedBiotas)
+        private static void InitializePlayerShell(Session session, Character character, Biota playerBiota, ref bool playerLoggedInOnNoLogLandblock)
         {
             Player player;
 
-            Player.HandleNoLogLandblock(playerBiota, out var playerLoggedInOnNoLogLandblock);
+            Player.HandleNoLogLandblock(playerBiota, out playerLoggedInOnNoLogLandblock);
 
             var stripAdminProperties = false;
             var addAdminProperties = false;
@@ -150,11 +161,11 @@ namespace ACE.Server.Managers
             }
 
             if (playerBiota.WeenieType == WeenieType.Admin)
-                player = new Admin(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
+                player = new Admin(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
             else if (playerBiota.WeenieType == WeenieType.Sentinel)
-                player = new Sentinel(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
+                player = new Sentinel(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
             else
-                player = new Player(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
+                player = new Player(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
 
             session.SetPlayer(player);
 
@@ -218,21 +229,32 @@ namespace ACE.Server.Managers
                 session.Player.Location = new Position(session.Player.Sanctuary);
 
             session.Player.PlayerEnterWorld();
+        }
 
-            var success = LandblockManager.AddObject(session.Player, true);
+        private static void FinishPlayerEnterWorld(Session session, Character character, PossessedBiotas possessedBiotas, bool playerLoggedInOnNoLogLandblock)
+        {
+            if (session.State == SessionState.TerminationStarted || session.Player == null)
+                return;
+
+            var player = session.Player;
+
+            player.LoadPossessions(possessedBiotas);
+
+            player.SendInventoryAndWieldedItems();
+
+            var success = LandblockManager.AddObject(player, true);
             if (!success)
             {
-                // send to lifestone, or fallback location
-                var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
+                var fixLoc = player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
 
-                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc.ToLOCString()}");
+                log.Error($"WorldManager.FinishPlayerEnterWorld: failed to spawn {player.Name}, relocating to {fixLoc.ToLOCString()}");
 
-                session.Player.Location = new Position(fixLoc);
-                LandblockManager.AddObject(session.Player, true);
+                player.Location = new Position(fixLoc);
+                LandblockManager.AddObject(player, true);
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(5.0f);
-                actionChain.AddAction(session.Player, () =>
+                actionChain.AddAction(player, () =>
                 {
                     if (session != null && session.Player != null)
                         session.Player.Teleport(fixLoc);
@@ -240,7 +262,6 @@ namespace ACE.Server.Managers
                 actionChain.EnqueueChain();
             }
 
-            // These warnings are set by DDD_InterrogationResponse
             if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && PropertyManager.GetBool("show_dat_warning").Item)
             {
                 var msg = PropertyManager.GetString("dat_older_warning_msg").Item;
@@ -271,10 +292,13 @@ namespace ACE.Server.Managers
             if (!string.IsNullOrEmpty(server_motd))
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{server_motd}\n", ChatMessageType.Broadcast));
 
+            var olthoiPlayerReturnedToLifestone = player.IsOlthoiPlayer && character.TotalLogins >= 1 && player.LoginAtLifestone;
             if (olthoiPlayerReturnedToLifestone)
                 session.Network.EnqueueSend(new GameMessageSystemChat("You have returned to the Olthoi Queen to serve the hive.", ChatMessageType.Broadcast));
-            else if (playerLoggedInOnNoLogLandblock) // see http://acpedia.org/wiki/Mount_Elyrii_Hive
-                session.Network.EnqueueSend(new GameMessageSystemChat("The currents of portal space cannot return you from whence you came. Your previous location forbids login.", ChatMessageType.Broadcast));            
+            else if (playerLoggedInOnNoLogLandblock)
+                session.Network.EnqueueSend(new GameMessageSystemChat("The currents of portal space cannot return you from whence you came. Your previous location forbids login.", ChatMessageType.Broadcast));
+
+            player.OnTeleportComplete();
         }
 
         private static string AppendLines(params string[] lines)
