@@ -5,6 +5,7 @@ using log4net;
 using System;
 using System.Linq;
 using System.Net;
+using System.Threading.Tasks;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -112,6 +113,15 @@ namespace ACE.Database.Models.Auth
             DatabaseManager.Authentication.UpdateAccount(account);
         }
 
+        public static async Task UpdateLastLoginAsync(this Account account, IPAddress address)
+        {
+            account.LastLoginIP = address.GetAddressBytes();
+            account.LastLoginTime = DateTime.UtcNow;
+            account.TotalTimesLoggedIn++;
+
+            await DatabaseManager.Authentication.UpdateAccountAsync(account);
+        }
+
         public static void UnBan(this Account account)
         {
             account.BanExpireTime = null;
@@ -120,6 +130,16 @@ namespace ACE.Database.Models.Auth
             account.BanReason = null;
 
             DatabaseManager.Authentication.UpdateAccount(account);
+        }
+
+        public static async Task UnBanAsync(this Account account)
+        {
+            account.BanExpireTime = null;
+            account.BannedByAccountId = null;
+            account.BannedTime = null;
+            account.BanReason = null;
+
+            await DatabaseManager.Authentication.UpdateAccountAsync(account);
         }
     }
 }

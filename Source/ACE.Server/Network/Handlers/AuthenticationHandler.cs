@@ -42,8 +42,7 @@ namespace ACE.Server.Network.Handlers
                     return;
                 }
 
-                Task t = new Task(() => DoLogin(session, loginRequest));
-                t.Start();
+                Task.Run(async () => await DoLoginAsync(session, loginRequest));
             }
             catch (Exception ex)
             {
@@ -52,9 +51,9 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        private static void DoLogin(Session session, PacketInboundLoginRequest loginRequest)
+        private static async Task DoLoginAsync(Session session, PacketInboundLoginRequest loginRequest)
         {
-            var account = DatabaseManager.Authentication.GetAccountByName(loginRequest.Account);
+            var account = await DatabaseManager.Authentication.GetAccountByNameAsync(loginRequest.Account);
 
             if (account == null)
             {
@@ -80,7 +79,7 @@ namespace ACE.Server.Network.Handlers
                             log.Warn($"Automatically setting account AccessLevel to Admin for account \"{loginRequest.Account}\" because there are no admin accounts in the current database.");
                         }
 
-                        account = DatabaseManager.Authentication.CreateAccount(loginRequest.Account.ToLower(), loginRequest.Password, accessLevel, session.EndPointC2S.Address);
+                        account = await DatabaseManager.Authentication.CreateAccountAsync(loginRequest.Account.ToLower(), loginRequest.Password, accessLevel, session.EndPointC2S.Address);
                     }
                 }
             }
@@ -88,7 +87,7 @@ namespace ACE.Server.Network.Handlers
             try
             {
                 log.DebugFormat("new client connected: {0}. setting session properties", loginRequest.Account);
-                AccountSelectCallback(account, session, loginRequest);
+                await AccountSelectCallback(account, session, loginRequest);
             }
             catch (Exception ex)
             {
@@ -98,7 +97,7 @@ namespace ACE.Server.Network.Handlers
         }
 
 
-        private static void AccountSelectCallback(Account account, Session session, PacketInboundLoginRequest loginRequest)
+        private static async Task AccountSelectCallback(Account account, Session session, PacketInboundLoginRequest loginRequest)
         {
             packetLog.DebugFormat("ConnectRequest TS: {0}", Timers.PortalYearTicks);
 
@@ -222,11 +221,11 @@ namespace ACE.Server.Network.Handlers
                 }
                 else
                 {
-                    account.UnBan();
+                    await account.UnBanAsync();
                 }
             }
 
-            account.UpdateLastLogin(session.EndPointC2S.Address);
+            await account.UpdateLastLoginAsync(session.EndPointC2S.Address);
 
             session.SetAccount(account.AccountId, account.AccountName, (AccessLevel)account.AccessLevel);
             session.State = SessionState.AuthConnectResponse;
