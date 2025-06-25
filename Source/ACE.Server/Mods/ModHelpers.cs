@@ -193,8 +193,9 @@ namespace ACE.Server.Mods
             {
                 try
                 {
-                    //Get a stream.  OpenRead only allows read share
-                    await File.WriteAllTextAsync(file.FullName, content);
+                    await using FileStream stream = new(file.FullName, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+                    using StreamWriter writer = new(stream);
+                    await writer.WriteAsync(content);
                     return;
                 }
                 //https://learn.microsoft.com/en-us/dotnet/standard/io/handling-io-errors
@@ -221,12 +222,10 @@ namespace ACE.Server.Mods
             {
                 try
                 {
-                    //Get a stream.  OpenRead only allows read share
-                    StreamReader reader = new(file.OpenRead());
+                    await using FileStream stream = new(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+                    using StreamReader reader = new(stream);
 
-                    //Return stream if there's no problem
                     var content = await reader.ReadToEndAsync();
-                    reader.Close();
                     return content;
                 }
                 //https://learn.microsoft.com/en-us/dotnet/standard/io/handling-io-errors
