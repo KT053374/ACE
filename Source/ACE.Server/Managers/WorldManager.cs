@@ -295,7 +295,6 @@ namespace ACE.Server.Managers
             if (!string.IsNullOrEmpty(server_motd))
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{server_motd}\n", ChatMessageType.Broadcast));
 
-            var olthoiPlayerReturnedToLifestone = player.IsOlthoiPlayer && character.TotalLogins >= 1 && player.LoginAtLifestone;
             if (olthoiPlayerReturnedToLifestone)
                 session.Network.EnqueueSend(new GameMessageSystemChat("You have returned to the Olthoi Queen to serve the hive.", ChatMessageType.Broadcast));
             else if (playerLoggedInOnNoLogLandblock)
