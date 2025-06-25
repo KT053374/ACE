@@ -247,20 +247,30 @@ namespace ACE.Server.WorldObjects
             {
                 Session.Network.EnqueueSend(new GameMessageCreateObject(item));
 
-                // Was the item I just send a container? If so, we need to send the items in the container as well. Og II
                 if (item is Container container)
-                {
-                    Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
-
-                    foreach (var itemsInContainer in container.Inventory.Values)
-                        Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
-                }
+                    SendContainerContentsRecursive(container);
             }
 
             foreach (var item in EquippedObjects.Values)
             {
                 item.Wielder = this;
                 Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+
+                if (item is Container container)
+                    SendContainerContentsRecursive(container);
+            }
+        }
+
+        private void SendContainerContentsRecursive(Container container)
+        {
+            Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
+
+            foreach (var obj in container.Inventory.Values)
+            {
+                Session.Network.EnqueueSend(new GameMessageCreateObject(obj));
+
+                if (obj is Container nested)
+                    SendContainerContentsRecursive(nested);
             }
         }
 
