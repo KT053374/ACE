@@ -21,6 +21,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Managers;
 using ACE.Server.Physics;
 using ACE.Server.Physics.Common;
+using ACE.Server.Network.Enum;
 
 using Character = ACE.Database.Models.Shard.Character;
 using Position = ACE.Entity.Position;
