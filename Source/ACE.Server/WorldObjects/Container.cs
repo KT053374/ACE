@@ -123,7 +123,7 @@ namespace ACE.Server.WorldObjects
         }
 
 
-        public bool InventoryLoaded { get; private set; }
+        public bool InventoryLoaded { get; internal set; }
 
         /// <summary>
         /// This will contain all main pack items, and all side slot items.<para />

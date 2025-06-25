@@ -10,6 +10,9 @@ namespace ACE.Server.Network.GameAction.Actions
         [GameAction(GameActionType.LoginComplete)]
         public static void Handle(ClientMessage message, Session session)
         {
+            if (session.Player.AwaitingInventory)
+                return;
+
             session.Player.OnTeleportComplete();
 
             if (!session.Player.FirstEnterWorldDone)

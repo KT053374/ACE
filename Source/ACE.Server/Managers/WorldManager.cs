@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Collections.Generic;
 
 using log4net;
 
@@ -24,6 +25,7 @@ using ACE.Server.Physics.Common;
 using ACE.Server.Network.Enum;
 
 using Character = ACE.Database.Models.Shard.Character;
+using DbBiota = ACE.Database.Models.Shard.Biota;
 using Position = ACE.Entity.Position;
 
 namespace ACE.Server.Managers
@@ -91,6 +93,10 @@ namespace ACE.Server.Managers
                 PlayerManager.BootAllPlayers();
         }
 
+        /// <summary>
+        /// Begins the login sequence for a character. Inventory is loaded
+        /// asynchronously so the player can enter the world faster.
+        /// </summary>
         public static void PlayerEnterWorld(Session session, Character character)
         {
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
@@ -103,22 +109,31 @@ namespace ACE.Server.Managers
 
             var playerBiota = offlinePlayer.Biota;
 
+            // start the player with no possessions to reduce login delay
+            InitializePlayer(session, character, playerBiota,
+                new PossessedBiotas(new List<DbBiota>(), new List<DbBiota>()), true);
+
             var start = DateTime.UtcNow;
+            // fetch the character possessions in parallel and apply them when ready
             DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, possessedBiotas =>
             {
                 log.DebugFormat("GetPossessedBiotasInParallel for {0} took {1:N0} ms", character.Name, (DateTime.UtcNow - start).TotalMilliseconds);
 
+                // ensure the session is still active before applying results
                 ActionQueue.EnqueueAction(new ActionEventDelegate(() =>
                 {
-                    if (session.State == SessionState.TerminationStarted)
+                    if (session.State == SessionState.TerminationStarted || session.Player == null)
                         return;
 
-                    InitializePlayer(session, character, playerBiota, possessedBiotas);
+                    session.Player.LoadPossessions(possessedBiotas);
+                    session.Player.SendInventoryAndWieldedItems();
+                    session.Player.AwaitingInventory = false;
+                    session.Player.OnTeleportComplete();
                 }));
             });
         }
 
-        private static void InitializePlayer(Session session, Character character, Biota playerBiota, PossessedBiotas possessedBiotas)
+        private static void InitializePlayer(Session session, Character character, Biota playerBiota, PossessedBiotas possessedBiotas, bool awaitingInventory)
         {
             Player player;
             Player.HandleNoLogLandblock(playerBiota, out var playerLoggedInOnNoLogLandblock);
@@ -165,6 +180,12 @@ namespace ACE.Server.Managers
                 player = new Player(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
 
             session.SetPlayer(player);
+
+            if (awaitingInventory)
+            {
+                player.InventoryLoaded = false;
+                player.AwaitingInventory = true;
+            }
 
             if (stripAdminProperties)
             {
@@ -280,7 +301,8 @@ namespace ACE.Server.Managers
             else if (playerLoggedInOnNoLogLandblock)
                 session.Network.EnqueueSend(new GameMessageSystemChat("The currents of portal space cannot return you from whence you came. Your previous location forbids login.", ChatMessageType.Broadcast));
 
-            player.OnTeleportComplete();
+            if (!awaitingInventory)
+                player.OnTeleportComplete();
         }
 
         private static string AppendLines(params string[] lines)

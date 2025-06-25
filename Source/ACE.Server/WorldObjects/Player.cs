@@ -46,6 +46,12 @@ namespace ACE.Server.WorldObjects
 
         public bool LastContact = true;
 
+        /// <summary>
+        /// True while the server is waiting for this player's possessions
+        /// to load from the database during login.
+        /// </summary>
+        public bool AwaitingInventory { get; internal set; }
+
         public bool IsJumping
         {
             get
