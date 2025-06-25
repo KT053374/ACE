@@ -102,39 +102,35 @@ namespace ACE.Server.Managers
             }
 
             var playerBiota = offlinePlayer.Biota;
-            bool playerLoggedInOnNoLogLandblock = false;
-
-            ActionQueue.EnqueueAction(new ActionEventDelegate(() =>
-            {
-                if (session.State == SessionState.TerminationStarted)
-                    return;
-
-                InitializePlayerShell(session, character, playerBiota, ref playerLoggedInOnNoLogLandblock);
-            }));
 
             var start = DateTime.UtcNow;
-            DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
+            DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, possessedBiotas =>
             {
                 log.DebugFormat("GetPossessedBiotasInParallel for {0} took {1:N0} ms", character.Name, (DateTime.UtcNow - start).TotalMilliseconds);
 
-                ActionQueue.EnqueueAction(new ActionEventDelegate(() => FinishPlayerEnterWorld(session, character, biotas, playerLoggedInOnNoLogLandblock)));
+                ActionQueue.EnqueueAction(new ActionEventDelegate(() =>
+                {
+                    if (session.State == SessionState.TerminationStarted)
+                        return;
+
+                    InitializePlayer(session, character, playerBiota, possessedBiotas);
+                }));
             });
         }
 
-        private static void InitializePlayerShell(Session session, Character character, Biota playerBiota, ref bool playerLoggedInOnNoLogLandblock)
+        private static void InitializePlayer(Session session, Character character, Biota playerBiota, PossessedBiotas possessedBiotas)
         {
             Player player;
-
-            Player.HandleNoLogLandblock(playerBiota, out playerLoggedInOnNoLogLandblock);
+            Player.HandleNoLogLandblock(playerBiota, out var playerLoggedInOnNoLogLandblock);
 
             var stripAdminProperties = false;
             var addAdminProperties = false;
             var addSentinelProperties = false;
             if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions)
             {
-                if (session.AccessLevel <= AccessLevel.Advocate) // check for elevated characters
+                if (session.AccessLevel <= AccessLevel.Advocate)
                 {
-                    if (playerBiota.WeenieType == WeenieType.Admin || playerBiota.WeenieType == WeenieType.Sentinel) // Downgrade weenie
+                    if (playerBiota.WeenieType == WeenieType.Admin || playerBiota.WeenieType == WeenieType.Sentinel)
                     {
                         character.IsPlussed = false;
                         playerBiota.WeenieType = WeenieType.Creature;
@@ -143,16 +139,16 @@ namespace ACE.Server.Managers
                 }
                 else if (session.AccessLevel >= AccessLevel.Sentinel && session.AccessLevel <= AccessLevel.Envoy)
                 {
-                    if (playerBiota.WeenieType == WeenieType.Creature || playerBiota.WeenieType == WeenieType.Admin) // Up/downgrade weenie
+                    if (playerBiota.WeenieType == WeenieType.Creature || playerBiota.WeenieType == WeenieType.Admin)
                     {
                         character.IsPlussed = true;
                         playerBiota.WeenieType = WeenieType.Sentinel;
                         addSentinelProperties = true;
                     }
                 }
-                else // Developers and Admins
+                else
                 {
-                    if (playerBiota.WeenieType == WeenieType.Creature || playerBiota.WeenieType == WeenieType.Sentinel) // Up/downgrade weenie
+                    if (playerBiota.WeenieType == WeenieType.Creature || playerBiota.WeenieType == WeenieType.Sentinel)
                     {
                         character.IsPlussed = true;
                         playerBiota.WeenieType = WeenieType.Admin;
@@ -162,15 +158,15 @@ namespace ACE.Server.Managers
             }
 
             if (playerBiota.WeenieType == WeenieType.Admin)
-                player = new Admin(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
+                player = new Admin(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
             else if (playerBiota.WeenieType == WeenieType.Sentinel)
-                player = new Sentinel(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
+                player = new Sentinel(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
             else
-                player = new Player(playerBiota, Array.Empty<Biota>(), Array.Empty<Biota>(), character, session);
+                player = new Player(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
 
             session.SetPlayer(player);
 
-            if (stripAdminProperties) // continue stripping properties
+            if (stripAdminProperties)
             {
                 player.CloakStatus = CloakStatus.Undef;
                 player.Attackable = true;
@@ -185,12 +181,11 @@ namespace ACE.Server.Managers
                 player.SafeSpellComponents = false;
                 player.ReportCollisions = true;
 
-
                 player.ChangesDetected = true;
                 player.CharacterChangesDetected = true;
             }
 
-            if (addSentinelProperties || addAdminProperties) // continue restoring properties to default
+            if (addSentinelProperties || addAdminProperties)
             {
                 WorldObject weenie;
 
@@ -210,19 +205,17 @@ namespace ACE.Server.Managers
                     player.Invincible = false;
                     player.Cloaked = false;
 
-
                     player.ChangesDetected = true;
                     player.CharacterChangesDetected = true;
                 }
             }
 
-            // If the client is missing a location, we start them off in the starter town they chose
             if (session.Player.Location == null)
             {
                 if (session.Player.Instantiation != null)
                     session.Player.Location = new Position(session.Player.Instantiation);
                 else
-                    session.Player.Location = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);  // ultimate fallback
+                    session.Player.Location = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
             }
 
             var olthoiPlayerReturnedToLifestone = session.Player.IsOlthoiPlayer && character.TotalLogins >= 1 && session.Player.LoginAtLifestone;
@@ -230,18 +223,6 @@ namespace ACE.Server.Managers
                 session.Player.Location = new Position(session.Player.Sanctuary);
 
             session.Player.PlayerEnterWorld();
-        }
-
-        private static void FinishPlayerEnterWorld(Session session, Character character, PossessedBiotas possessedBiotas, bool playerLoggedInOnNoLogLandblock)
-        {
-            if (session.State == SessionState.TerminationStarted || session.Player == null)
-                return;
-
-            var player = session.Player;
-
-            player.LoadPossessions(possessedBiotas);
-
-            player.SendInventoryAndWieldedItems();
 
             var success = LandblockManager.AddObject(player, true);
             if (!success)
