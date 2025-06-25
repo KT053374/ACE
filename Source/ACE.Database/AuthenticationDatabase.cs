@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 using log4net;
@@ -50,6 +51,12 @@ namespace ACE.Database
                 return context.Account.Count();
         }
 
+        public async Task<int> GetAccountCountAsync()
+        {
+            using (var context = new AuthDbContext())
+                return await context.Account.CountAsync();
+        }
+
         /// <exception cref="MySqlException">Account with name already exists.</exception>
         public Account CreateAccount(string name, string password, AccessLevel accessLevel, IPAddress address)
         {
@@ -66,8 +73,29 @@ namespace ACE.Database
             using (var context = new AuthDbContext())
             {
                 context.Account.Add(account);
-
                 context.SaveChanges();
+            }
+
+            return account;
+        }
+
+        public async Task<Account> CreateAccountAsync(string name, string password, AccessLevel accessLevel, IPAddress address)
+        {
+            var account = new Account();
+
+            account.AccountName = name;
+            account.SetPassword(password);
+            account.SetSaltForBCrypt();
+            account.AccessLevel = (uint)accessLevel;
+
+            account.CreateTime = DateTime.UtcNow;
+            account.CreateIP = address.GetAddressBytes();
+
+            using (var context = new AuthDbContext())
+            {
+                await context.Account.AddAsync(account);
+
+                await context.SaveChangesAsync();
             }
 
             return account;
@@ -86,6 +114,16 @@ namespace ACE.Database
             }
         }
 
+        public async Task<Account?> GetAccountByIdAsync(uint accountId)
+        {
+            using (var context = new AuthDbContext())
+            {
+                return await context.Account
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.AccountId == accountId);
+            }
+        }
+
         /// <summary>
         /// Will return null if the accountName was not found.
         /// </summary>
@@ -96,6 +134,16 @@ namespace ACE.Database
                 return context.Account
                     .AsNoTracking()
                     .FirstOrDefault(r => r.AccountName == accountName);
+            }
+        }
+
+        public async Task<Account?> GetAccountByNameAsync(string accountName)
+        {
+            using (var context = new AuthDbContext())
+            {
+                return await context.Account
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.AccountName == accountName);
             }
         }
 
@@ -114,13 +162,34 @@ namespace ACE.Database
             }
         }
 
+        public async Task<uint> GetAccountIdByNameAsync(string accountName)
+        {
+            using (var context = new AuthDbContext())
+            {
+                var result = await context.Account
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.AccountName == accountName);
+
+                return (result != null) ? result.AccountId : 0;
+            }
+        }
+
         public void UpdateAccount(Account account)
         {
             using (var context = new AuthDbContext())
             {
                 context.Entry(account).State = EntityState.Modified;
-
                 context.SaveChanges();
+            }
+        }
+
+        public async Task UpdateAccountAsync(Account account)
+        {
+            using (var context = new AuthDbContext())
+            {
+                context.Entry(account).State = EntityState.Modified;
+
+                await context.SaveChangesAsync();
             }
         }
 
@@ -137,6 +206,24 @@ namespace ACE.Database
                 account.AccessLevel = (uint)accessLevel;
 
                 context.SaveChanges();
+            }
+
+            return true;
+        }
+
+        public async Task<bool> UpdateAccountAccessLevelAsync(uint accountId, AccessLevel accessLevel)
+        {
+            using (var context = new AuthDbContext())
+            {
+                var account = await context.Account
+                    .FirstOrDefaultAsync(r => r.AccountId == accountId);
+
+                if (account == null)
+                    return false;
+
+                account.AccessLevel = (uint)accessLevel;
+
+                await context.SaveChangesAsync();
             }
 
             return true;
