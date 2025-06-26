@@ -39,3 +39,11 @@ Please note that this project is released with a [Contributor Code of Conduct](h
 
 ## Contact
 * [Discord Channel](https://discord.gg/C2WzhP9)
+
+## Server Startup Scripts
+After building, run the appropriate script from the build output directory:
+
+* `start_server.bat` for Windows
+* `start_server.sh` for Linux/macOS
+
+Each script verifies it is executed from the output folder and then launches the server using `dotnet`.
